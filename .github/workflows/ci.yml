@@ -17,13 +17,18 @@ jobs:
         run: cmake --build build
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
-      - name: Build AArch64 guest ELF
+      - name: Build assembly AArch64 guest
         if: runner.os == 'Linux'
         run: |
           clang --target=aarch64-none-elf -c tests/guest_minimal.S -o build/guest_minimal.o
           ld.lld -m aarch64elf -Ttext=0x400000 -e _start build/guest_minimal.o -o build/guest_minimal.elf
-      - name: Execute AArch64 ELF with ASBridge
-        if: runner.os == 'Linux'
-        run: |
           build/asrun build/guest_minimal.elf | tee build/guest.out
           grep -q 'x0=0x12c' build/guest.out
+      - name: Build freestanding C AArch64 guest
+        if: runner.os == 'Linux'
+        run: |
+          clang --target=aarch64-none-elf -O1 -ffreestanding -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -c tests/guest_c.c -o build/guest_c.o
+          clang --target=aarch64-none-elf -c tests/guest_c_start.S -o build/guest_c_start.o
+          ld.lld -m aarch64elf -Ttext=0x400000 -e _start build/guest_c_start.o build/guest_c.o -o build/guest_c.elf
+          build/asrun build/guest_c.elf | tee build/guest_c.out
+          grep -q 'x0=0x12c' build/guest_c.out
