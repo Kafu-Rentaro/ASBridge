@@ -21,7 +21,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           clang --target=aarch64-none-elf -c tests/guest_minimal.S -o build/guest_minimal.o
-          clang --target=aarch64-none-elf -fuse-ld=lld -nostdlib -Wl,-Ttext=0x400000 -Wl,-e,_start build/guest_minimal.o -o build/guest_minimal.elf
+          clang --target=aarch64-none-elf -fuse-ld=lld -nostdlib -Wl,-Ttext=0x401000 -Wl,-Tdata=0x402000 -Wl,-e,_start -Wl,--image-base=0x400000 build/guest_minimal.o -o build/guest_minimal.elf
           build/asrun build/guest_minimal.elf | tee build/guest.out
           grep -q 'x0=0x12c' build/guest.out
       - name: Build freestanding C AArch64 guest
@@ -29,7 +29,7 @@ jobs:
         run: |
           clang --target=aarch64-none-elf -O1 -ffreestanding -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -c tests/guest_c.c -o build/guest_c.o
           clang --target=aarch64-none-elf -c tests/guest_c_start.S -o build/guest_c_start.o
-          clang --target=aarch64-none-elf -fuse-ld=lld -nostdlib -Wl,-Ttext=0x400000 -Wl,-e,_start build/guest_c_start.o build/guest_c.o -o build/guest_c.elf
+          clang --target=aarch64-none-elf -fuse-ld=lld -nostdlib -Wl,-Ttext=0x401000 -Wl,-Tdata=0x402000 -Wl,-e,_start -Wl,--image-base=0x400000 build/guest_c_start.o build/guest_c.o -o build/guest_c.elf
           build/asrun build/guest_c.elf | tee build/guest_c.out
           grep -q 'x0=0x12c' build/guest_c.out
 
@@ -38,6 +38,6 @@ jobs:
         run: |
           clang --target=aarch64-none-elf -O1 -ffreestanding -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -c tests/guest_int.c -o build/guest_int.o
           clang --target=aarch64-none-elf -c tests/guest_int_start.S -o build/guest_int_start.o
-          clang --target=aarch64-none-elf -fuse-ld=lld -nostdlib -Wl,-Ttext=0x400000 -Wl,-e,_start build/guest_int_start.o build/guest_int.o -o build/guest_int.elf
+          clang --target=aarch64-none-elf -fuse-ld=lld -nostdlib -Wl,-Ttext=0x401000 -Wl,-Tdata=0x402000 -Wl,-e,_start -Wl,--image-base=0x400000 build/guest_int_start.o build/guest_int.o -o build/guest_int.elf
           build/asrun build/guest_int.elf | tee build/guest_int.out
           grep -q 'x0=0x30' build/guest_int.out
