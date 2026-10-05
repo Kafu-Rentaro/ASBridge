@@ -13,4 +13,6 @@ Initial rules:
 - Interpreter/JIT differential tests are required before an operation is considered JIT-supported.
 - Executable-memory allocation is deliberately separate from byte emission so emitter tests can run without RWX memory.
 
-The first emitter intentionally produces only a RET stub. This establishes the TB/emitter/code-buffer interfaces before register allocation and executable code-cache policy are introduced.
+The emitter has progressed beyond the initial RET stub. The current baseline directly updates canonical ASCPU state and intentionally avoids a register allocator. ASJitContext provides CPU, bounded guest memory, and fault state for the next memory-lowering stage.
+
+For the authoritative implementation queue and completion criteria, see AGENTS.md.
