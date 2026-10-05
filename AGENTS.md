@@ -5,6 +5,14 @@ ASBridge is a clean-room ARM64 execution / dynamic binary translation environmen
 
 Current development line: **v0.0.4 — translation blocks and baseline x86-64 JIT**.
 
+P0-P5 are implemented on this line. Re-run the validation gates below before
+proposing merge. Native ELF execution is available through `asrun --jit`, explicit
+fallback through `--jit-fallback`, and full interpreter/JIT state comparison
+through `--compare`. Compile and compare all guests with
+`bash tests/check_guests.sh build` on x86-64 Linux with Clang/LLD.
+The next platform milestones are documented in `docs/ROADMAP.md`; OS boot and GPU
+acceleration remain future work.
+
 ## Non-negotiable clean-room rules
 - Implement ARM64 behavior primarily from public architecture documentation.
 - Do not copy source code from QEMU, m1n1, XNU, Apple proprietary software, or other license-incompatible implementations.
@@ -31,6 +39,8 @@ Important invariants:
 3. Interpreter behavior is the reference behavior.
 4. A JIT operation is not complete until differential tests compare interpreter and JIT state.
 5. TBs end at control-flow or HALT operations.
+   Stores also end runtime-built TBs so guest code modifications take effect
+   before the next instruction is translated or fetched from the cache.
 6. Keep executable-memory allocation separate from byte emission.
 7. Prefer correctness and explicit state updates over optimization in v0.0.4.
 
@@ -41,9 +51,11 @@ Important invariants:
 - `src/interpreter.c` — reference execution.
 - `include/asbridge/tb.h`, `src/tb.c` — translation blocks.
 - `include/asbridge/jit.h`, `src/jit_x86_64.c` — baseline x86-64 JIT.
+- `include/asbridge/jit_runtime.h`, `src/jit_runtime.c` — native dispatch/cache.
 - `include/asbridge/memory.h`, `src/memory.c` — bounded guest RAM.
 - `src/elf.c` — bounded ELF64/AArch64 loader.
 - `tests/test_core.c` — unit/differential tests.
+- `tests/test_{reference,jit,elf,runtime}.c` — focused correctness/differential tests.
 - `tests/guest_*.{c,S}` — independently compiled AArch64 payloads.
 - `docs/JIT.md` — JIT design notes.
 
