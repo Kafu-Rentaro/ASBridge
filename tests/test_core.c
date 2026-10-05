@@ -1,27 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "asbridge/cpu.h"
 #include "asbridge/interpreter.h"
-
-int main(void) {
-    ASCPU cpu;
-    as_cpu_reset(&cpu, 0x80000000u);
-
-    assert(as_step(&cpu, 0xD2824680u) == 0); /* movz x0,#0x1234 */
-    assert(cpu.x[0] == 0x1234u);
-
-    assert(as_step(&cpu, 0x91004000u) == 0); /* add x0,x0,#16 */
-    assert(cpu.x[0] == 0x1244u);
-
-    assert(as_step(&cpu, 0xD1001000u) == 0); /* sub x0,x0,#4 */
-    assert(cpu.x[0] == 0x1240u);
-
-    assert(as_step(&cpu, 0xD503201Fu) == 0); /* nop */
-
-    assert(as_step(&cpu, 0xD4200000u) == 0); /* brk #0 */
-    assert(cpu.halted);
-
-    puts("ASCore v0.0.1: PASS");
-    return 0;
-}
+int main(void){ASCPU c;uint8_t ram[0x1000]={0};ASMemory m={ram,sizeof(ram),0x80000000u};as_cpu_reset(&c,m.base);uint32_t p[]={0xD2824680u,0x91004000u,0xD1001000u,0xD4200000u};memcpy(ram,p,sizeof(p));assert(as_run(&c,&m,16)==0);assert(c.x[0]==0x1240u);assert(c.halted);as_cpu_reset(&c,m.base);c.x[1]=m.base+0x100;c.x[2]=0x1122334455667788ULL;assert(as_step(&c,&m,0xF9000022u)==0);assert(as_step(&c,&m,0xF9400023u)==0);assert(c.x[3]==c.x[2]);puts("ASCore v0.0.2: PASS");return 0;}
