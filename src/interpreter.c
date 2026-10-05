@@ -1,46 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
+#include <string.h>
 #include "asbridge/decode.h"
 #include "asbridge/interpreter.h"
-
-static uint64_t read_gpr(const ASCPU *cpu, unsigned r) {
-    return r == 31u ? 0u : cpu->x[r];
-}
-
-static void write_gpr(ASCPU *cpu, unsigned r, uint64_t v) {
-    if (r != 31u) cpu->x[r] = v;
-}
-
-int as_step(ASCPU *cpu, uint32_t insn) {
-    ASDecoded d;
-    if (!as_decode(insn, &d)) return -1;
-
-    switch (d.op) {
-    case AS_OP_NOP:
-        break;
-    case AS_OP_BRK:
-        cpu->halted = true;
-        cpu->halt_imm = d.imm16;
-        break;
-    case AS_OP_MOVZ:
-        write_gpr(cpu, d.rd, (uint64_t)d.imm16 << d.shift);
-        break;
-    case AS_OP_MOVK: {
-        uint64_t mask = UINT64_C(0xFFFF) << d.shift;
-        uint64_t v = (read_gpr(cpu, d.rd) & ~mask) |
-                     ((uint64_t)d.imm16 << d.shift);
-        write_gpr(cpu, d.rd, v);
-        break;
-    }
-    case AS_OP_ADD_IMM:
-        write_gpr(cpu, d.rd, read_gpr(cpu, d.rn) + ((uint64_t)d.imm12 << d.shift));
-        break;
-    case AS_OP_SUB_IMM:
-        write_gpr(cpu, d.rd, read_gpr(cpu, d.rn) - ((uint64_t)d.imm12 << d.shift));
-        break;
-    default:
-        return -1;
-    }
-
-    cpu->pc += 4;
-    return 0;
-}
+static uint64_t rg(const ASCPU*c,unsigned r){return r==31u?0:c->x[r];}static void wg(ASCPU*c,unsigned r,uint64_t v){if(r!=31u)c->x[r]=v;}
+int as_step(ASCPU*c,ASMemory*m,uint32_t i){ASIR q;if(!as_decode_ir(i,&q))return-1;uint64_t n=c->pc+4,v=0;switch(q.op){case ASIR_NOP:break;case ASIR_HALT:c->halted=true;c->halt_imm=(uint16_t)q.imm;break;case ASIR_MOV_IMM:wg(c,q.rd,q.imm<<q.shift);break;case ASIR_MOV_KEEP:{uint64_t mask=UINT64_C(0xffff)<<q.shift;wg(c,q.rd,(rg(c,q.rd)&~mask)|((q.imm<<q.shift)&mask));break;}case ASIR_ADD_IMM:wg(c,q.rd,rg(c,q.rn)+q.imm);break;case ASIR_SUB_IMM:wg(c,q.rd,rg(c,q.rn)-q.imm);break;case ASIR_LOAD64:if(as_mem_read64(m,rg(c,q.rn)+q.imm,&v))return-2;wg(c,q.rd,v);break;case ASIR_STORE64:v=rg(c,q.rd);if(as_mem_write64(m,rg(c,q.rn)+q.imm,v))return-2;break;case ASIR_BRANCH:if(q.rd==30u)c->x[30]=n;n=c->pc+q.offset;break;case ASIR_BRANCH_ZERO:if((rg(c,q.rn)==0u)!=(q.imm!=0u))n=c->pc+q.offset;break;case ASIR_BRANCH_REG:n=rg(c,q.rn);break;default:return-1;}c->pc=n;return 0;}
+int as_run(ASCPU*c,ASMemory*m,uint64_t lim){while(!c->halted&&lim--){if(c->pc<m->base||c->pc-m->base+4>m->size)return-2;uint32_t i;memcpy(&i,m->data+(size_t)(c->pc-m->base),4);int r=as_step(c,m,i);if(r)return r;}return c->halted?0:1;}
