@@ -22,3 +22,6 @@ case ASIR_AND_REG:case ASIR_ORR_REG:case ASIR_EOR_REG:case ASIR_MUL:{if(q->rd==3
 case ASIR_HALT:{if(setpc(j,tb->insn[k].pc+4))return-1;uint8_t h[]={0xC6,0x87};if(e(j,h,2)||u32(j,(uint32_t)offsetof(ASCPU,halted))||u8(j,1))return-1;uint8_t hi[]={0x66,0xC7,0x87};if(e(j,hi,3)||u32(j,(uint32_t)offsetof(ASCPU,halt_imm))||e(j,&q->imm,2))return-1;break;}
 default:return-2;}}
 return u8(j,0xC3);}
+
+int as_jit_load(ASJitContext*ctx,unsigned reg,uint64_t addr,unsigned width){if(!ctx||!ctx->cpu||!ctx->mem||reg>=32)return-1;uint64_t v=0;if(width==32){uint32_t w;if(as_mem_read32(ctx->mem,addr,&w)){ctx->fault=-2;return-2;}v=w;}else if(width==64){if(as_mem_read64(ctx->mem,addr,&v)){ctx->fault=-2;return-2;}}else return-1;if(reg!=31)ctx->cpu->x[reg]=v;return 0;}
+int as_jit_store(ASJitContext*ctx,unsigned reg,uint64_t addr,unsigned width){if(!ctx||!ctx->cpu||!ctx->mem||reg>=32)return-1;uint64_t v=reg==31?0:ctx->cpu->x[reg];int r=width==32?as_mem_write32(ctx->mem,addr,(uint32_t)v):(width==64?as_mem_write64(ctx->mem,addr,v):-1);if(r){ctx->fault=-2;return-2;}return 0;}
