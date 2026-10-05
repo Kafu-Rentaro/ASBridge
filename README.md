@@ -4,7 +4,7 @@ ASBridge is an experimental clean-room ARM64 execution and dynamic binary transl
 
 ## Status
 
-Early development — ASCore v0.0.1 bootstrap.
+Early development — ASCore v0.0.4 translation-block and baseline x86-64 JIT milestone.
 
 ## Principles
 
@@ -25,6 +25,10 @@ Early development — ASCore v0.0.1 bootstrap.
 7. SMP and atomics.
 8. UEFI standalone runtime.
 9. Pluggable platform-personality framework.
+
+## Codex / agent development
+
+Repository development instructions, clean-room boundaries, validation commands, and the current v0.0.4 work queue are maintained in `AGENTS.md`. Read it before modifying ASCore.
 
 ## Build
 
