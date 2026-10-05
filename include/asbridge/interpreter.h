@@ -3,5 +3,7 @@
 #define ASBRIDGE_INTERPRETER_H
 #include <stdint.h>
 #include "asbridge/cpu.h"
-int as_step(ASCPU *cpu, uint32_t insn);
+#include "asbridge/memory.h"
+int as_step(ASCPU *cpu, ASMemory *mem, uint32_t insn);
+int as_run(ASCPU *cpu, ASMemory *mem, uint64_t max_steps);
 #endif

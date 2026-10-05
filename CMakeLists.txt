@@ -1,20 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(ASBridge VERSION 0.0.1 LANGUAGES C)
-
+project(ASBridge VERSION 0.0.2 LANGUAGES C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
-
-add_library(ascore
-    src/cpu.c
-    src/decode.c
-    src/interpreter.c
-)
+add_library(ascore src/cpu.c src/memory.c src/decode.c src/interpreter.c)
 target_include_directories(ascore PUBLIC include)
 target_compile_options(ascore PRIVATE -Wall -Wextra -Wpedantic)
-
 add_executable(ascore_test tests/test_core.c)
 target_link_libraries(ascore_test PRIVATE ascore)
-
 enable_testing()
-add_test(NAME ascore_v001 COMMAND ascore_test)
+add_test(NAME ascore_v002 COMMAND ascore_test)
