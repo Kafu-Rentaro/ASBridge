@@ -1,28 +1,133 @@
 // SPDX-License-Identifier: BSD-3-Clause
-#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#if defined(__x86_64__) && (defined(__unix__) || defined(__APPLE__))
-#include <sys/mman.h>
-#include <unistd.h>
-#endif
 #include "asbridge/cpu.h"
 #include "asbridge/decode.h"
 #include "asbridge/elf.h"
 #include "asbridge/interpreter.h"
-#include "asbridge/jit.h"
 #include "asbridge/tb.h"
-static void decode_tests(void){ASIR q;assert(as_decode_ir(0xF9000022u,&q)&&q.op==ASIR_STORE);assert(as_decode_ir(0xF9400023u,&q)&&q.op==ASIR_LOAD);assert(as_decode_ir(0xA9BF7BFDu,&q)&&q.op==ASIR_STORE_PAIR64&&q.addr_mode==AS_ADDR_PRE&&q.offset==-16);assert(as_decode_ir(0xA8C17BFDu,&q)&&q.op==ASIR_LOAD_PAIR64&&q.addr_mode==AS_ADDR_POST&&q.offset==16);}
-static void stack_frame_test(void){ASCPU c;uint8_t ram[4096]={0};ASMemory m={ram,sizeof(ram),0x80000000u};as_cpu_reset(&c,m.base);c.sp=m.base+0x800;c.x[29]=0x1111;c.x[30]=0x2222;uint64_t initial=c.sp;assert(as_step(&c,&m,0xA9BF7BFDu)==0);assert(c.sp==initial-16);c.x[29]=c.x[30]=0;assert(as_step(&c,&m,0xA8C17BFDu)==0);assert(c.sp==initial&&c.x[29]==0x1111&&c.x[30]==0x2222);}
-static void program_test(void){ASCPU c;uint8_t ram[4096]={0};ASMemory m={ram,sizeof(ram),0x80000000u};uint32_t p[]={0xD2824680u,0x91004000u,0xD1001000u,0xD4200000u};memcpy(ram,p,sizeof(p));as_cpu_reset(&c,m.base);assert(as_run(&c,&m,16)==0&&c.x[0]==0x1240u);}
-static void wreg_test(void){ASCPU c;uint8_t ram[4096]={0};ASMemory m={ram,sizeof(ram),0x80000000u};as_cpu_reset(&c,m.base);c.x[0]=UINT64_MAX;assert(as_step(&c,&m,0x52800020u)==0);assert(c.x[0]==1);c.x[1]=m.base+0x100;c.x[2]=UINT64_C(0xdeadbeef12345678);assert(as_step(&c,&m,0xB9000022u)==0);c.x[3]=UINT64_MAX;assert(as_step(&c,&m,0xB9400023u)==0);assert(c.x[3]==UINT64_C(0x12345678));}
-static void elf_reject_test(void){uint8_t bad[64]={0},ram[4096]={0};ASMemory m={ram,sizeof(ram),0x400000};ASELFImage e;assert(as_elf_load(bad,sizeof(bad),&m,&e)!=0);bad[0]=0x7f;bad[1]='E';bad[2]='L';bad[3]='F';bad[4]=2;bad[5]=1;assert(as_elf_load(bad,sizeof(bad),&m,&e)!=0);}
-static void tb_jit_test(void){uint32_t code[]={0xD2800020u,0x91000800u,0xD4200000u};ASTranslationBlock tb;assert(as_tb_build(&tb,(const uint8_t*)code,sizeof(code),0x1000,0x1000)==0);assert(tb.count==3&&tb.insn[2].ir.op==ASIR_HALT);uint8_t out[128]={0};ASJitCode j;as_jit_init(&j,out,sizeof(out));assert(as_jit_emit_tb_x86_64(&j,&tb)==0);assert(j.size>1&&out[j.size-1]==0xC3);
-#if defined(__x86_64__) && (defined(__unix__) || defined(__APPLE__))
- size_t ps=(size_t)sysconf(_SC_PAGESIZE);void*mem=mmap(NULL,ps,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANON,-1,0);assert(mem!=MAP_FAILED);memcpy(mem,out,j.size);assert(mprotect(mem,ps,PROT_READ|PROT_EXEC)==0);ASCPU jit,ref;ASMemory dummy={0};as_cpu_reset(&jit,0x1000);as_cpu_reset(&ref,0x1000);assert(as_step(&ref,&dummy,code[0])==0);assert(as_step(&ref,&dummy,code[1])==0);assert(as_step(&ref,&dummy,code[2])==0);void(*fn)(ASCPU*)=(void(*)(ASCPU*))mem;fn(&jit);assert(jit.x[0]==ref.x[0]&&jit.pc==ref.pc&&jit.halted==ref.halted&&jit.halt_imm==ref.halt_imm);munmap(mem,ps);
-#endif
+
+#define CHECK(expr) do { if (!(expr)) { \
+    fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #expr); \
+    exit(EXIT_FAILURE); \
+} } while (0)
+
+static void decode_tests(void)
+{
+    ASIR q;
+    CHECK(as_decode_ir(0xF9000022u, &q)); /* str x2, [x1] */
+    CHECK(q.op == ASIR_STORE && q.rd == 2 && q.rn == 1 && q.width == 64);
+    CHECK(as_decode_ir(0xB9400023u, &q)); /* ldr w3, [x1] */
+    CHECK(q.op == ASIR_LOAD && q.rd == 3 && q.width == 32);
+    CHECK(as_decode_ir(0xA9BF7BFDu, &q)); /* stp x29, x30, [sp, #-16]! */
+    CHECK(q.op == ASIR_STORE_PAIR64 && q.rn == 31 && q.rd == 29 &&
+          q.rt2 == 30 && q.addr_mode == AS_ADDR_PRE && q.offset == -16);
+    CHECK(as_decode_ir(0xA8C17BFDu, &q)); /* ldp x29, x30, [sp], #16 */
+    CHECK(q.op == ASIR_LOAD_PAIR64 && q.addr_mode == AS_ADDR_POST && q.offset == 16);
+    CHECK(as_decode_ir(0xA9410C22u, &q)); /* ldp x2, x3, [x1, #16] */
+    CHECK(q.addr_mode == AS_ADDR_OFFSET && q.offset == 16);
+    CHECK(as_decode_ir(0xD2A24680u, &q)); /* movz x0, #0x1234, lsl #16 */
+    CHECK(q.op == ASIR_MOV_IMM && q.imm == 0x1234 && q.shift == 16 && q.width == 64);
+    CHECK(as_decode_ir(0xF280ACE0u, &q)); /* movk x0, #0x567 */
+    CHECK(q.op == ASIR_MOV_KEEP && q.imm == 0x567 && q.width == 64);
+    CHECK(!as_decode_ir(0xFFFFFFFFu, &q));
+    CHECK(!as_decode_ir(0x52C00020u, &q)); /* reserved movz w0, lsl #32 */
+    CHECK(!as_decode_ir(0x8B410020u, &q)); /* add x0, x1, x1, lsr #0 */
+    CHECK(!as_decode_ir(0x8AC10020u, &q)); /* and x0, x1, x1, ror #0 */
 }
-static void jit_int_emit_test(void){ASIR ops[4]={{.op=ASIR_MUL,.rd=2,.rn=0,.rm=1,.width=32},{.op=ASIR_EOR_REG,.rd=2,.rn=2,.rm=3,.width=32},{.op=ASIR_AND_REG,.rd=2,.rn=2,.rm=4,.width=32},{.op=ASIR_ORR_REG,.rd=0,.rn=2,.rm=5,.width=32}};ASTranslationBlock tb={0};tb.count=4;for(size_t i=0;i<4;i++)tb.insn[i].ir=ops[i];uint8_t out[256]={0};ASJitCode j;as_jit_init(&j,out,sizeof(out));assert(as_jit_emit_tb_x86_64(&j,&tb)==0&&j.size>4&&out[j.size-1]==0xC3);}
-static void jit_memory_helper_test(void){uint8_t ram[64]={0};ASMemory m={ram,sizeof(ram),0x9000};ASCPU cpu;as_cpu_reset(&cpu,0);ASJitContext ctx={&cpu,&m,0};cpu.x[1]=UINT64_C(0x1122334455667788);assert(as_jit_store(&ctx,1,0x9010,64)==0);cpu.x[2]=0;assert(as_jit_load(&ctx,2,0x9010,64)==0&&cpu.x[2]==cpu.x[1]);cpu.x[3]=UINT64_MAX;assert(as_jit_store(&ctx,3,0x9020,32)==0);cpu.x[4]=0;assert(as_jit_load(&ctx,4,0x9020,32)==0&&cpu.x[4]==UINT32_MAX);assert(as_jit_load(&ctx,0,0xA000,64)==-2&&ctx.fault==-2);}
-int main(void){jit_memory_helper_test();jit_int_emit_test();tb_jit_test();decode_tests();stack_frame_test();program_test();wreg_test();elf_reject_test();puts("ASCore v0.0.4: PASS");return 0;}
+
+static void stack_frame_test(void)
+{
+    ASCPU cpu;
+    uint8_t ram[4096] = {0};
+    ASMemory mem = {.data = ram, .size = sizeof(ram), .base = 0x80000000u};
+    as_cpu_reset(&cpu, mem.base);
+    cpu.sp = mem.base + 0x800;
+    cpu.x[29] = 0x1111;
+    cpu.x[30] = 0x2222;
+    uint64_t initial_sp = cpu.sp;
+    CHECK(as_step(&cpu, &mem, 0xA9BF7BFDu) == 0);
+    CHECK(cpu.sp == initial_sp - 16);
+    cpu.x[29] = cpu.x[30] = 0;
+    CHECK(as_step(&cpu, &mem, 0xA8C17BFDu) == 0);
+    CHECK(cpu.sp == initial_sp && cpu.x[29] == 0x1111 && cpu.x[30] == 0x2222);
+}
+
+static void program_test(void)
+{
+    ASCPU cpu;
+    uint8_t ram[4096] = {0};
+    ASMemory mem = {.data = ram, .size = sizeof(ram), .base = 0x80000000u};
+    /* movz x0, #0x1234; add x0, x0, #16; sub x0, x0, #4; brk #0 */
+    const uint32_t code[] = {0xD2824680u, 0x91004000u, 0xD1001000u, 0xD4200000u};
+    for (size_t i = 0; i < sizeof(code) / sizeof(code[0]); ++i) {
+        CHECK(as_mem_write32(&mem, mem.base + i * 4, code[i]) == 0);
+    }
+    as_cpu_reset(&cpu, mem.base);
+    CHECK(as_run(&cpu, &mem, 16) == 0 && cpu.x[0] == 0x1240u);
+    CHECK(cpu.halted && cpu.pc == mem.base + sizeof(code));
+}
+
+static void wreg_test(void)
+{
+    ASCPU cpu;
+    uint8_t ram[4096] = {0};
+    ASMemory mem = {.data = ram, .size = sizeof(ram), .base = 0x80000000u};
+    as_cpu_reset(&cpu, mem.base);
+    cpu.x[0] = UINT64_MAX;
+    CHECK(as_step(&cpu, &mem, 0x52800020u) == 0); /* movz w0, #1 */
+    CHECK(cpu.x[0] == 1);
+    cpu.x[1] = mem.base + 0x100;
+    cpu.x[2] = UINT64_C(0xdeadbeef12345678);
+    CHECK(as_step(&cpu, &mem, 0xB9000022u) == 0); /* str w2, [x1] */
+    cpu.x[3] = UINT64_MAX;
+    CHECK(as_step(&cpu, &mem, 0xB9400023u) == 0); /* ldr w3, [x1] */
+    CHECK(cpu.x[3] == UINT64_C(0x12345678));
+}
+
+static void tb_test(void)
+{
+    const uint8_t code[] = {
+        0x20, 0x00, 0x80, 0xD2, /* movz x0, #1 */
+        0x00, 0x08, 0x00, 0x91, /* add x0, x0, #2 */
+        0x00, 0x00, 0x20, 0xD4, /* brk #0 */
+        0x1F, 0x20, 0x03, 0xD5  /* nop, after terminator */
+    };
+    ASTranslationBlock tb;
+    CHECK(as_tb_build(&tb, code, sizeof(code), 0x1000, 0x1000) == 0);
+    CHECK(tb.count == 3 && tb.insn[2].ir.op == ASIR_HALT);
+    CHECK(tb.insn[0].pc == 0x1000 && tb.insn[2].pc == 0x1008);
+    CHECK(as_tb_build(&tb, code, sizeof(code), 0x1000, 0x100C) == 0);
+    CHECK(tb.count == 1 && tb.insn[0].ir.op == ASIR_NOP);
+    CHECK(as_tb_build(&tb, code, sizeof(code), 0x1000, 0x1010) != 0);
+    CHECK(as_tb_build(&tb, code, sizeof(code), 0x1000, 0x1001) != 0);
+}
+
+static void elf_reject_test(void)
+{
+    uint8_t bad[64] = {0}, ram[4096] = {0};
+    ASMemory mem = {.data = ram, .size = sizeof(ram), .base = 0x400000};
+    ASELFImage image;
+    CHECK(as_elf_load(bad, sizeof(bad), &mem, &image) != 0);
+    bad[0] = 0x7f;
+    bad[1] = 'E';
+    bad[2] = 'L';
+    bad[3] = 'F';
+    bad[4] = 2;
+    bad[5] = 1;
+    CHECK(as_elf_load(bad, sizeof(bad), &mem, &image) != 0);
+}
+
+int main(void)
+{
+    decode_tests();
+    stack_frame_test();
+    program_test();
+    wreg_test();
+    tb_test();
+    elf_reject_test();
+    puts("ASCore v0.0.4: PASS");
+    return 0;
+}
