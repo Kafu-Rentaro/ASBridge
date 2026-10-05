@@ -21,3 +21,8 @@ endforeach()
 foreach(target IN ITEMS ascore_test asreference_test aself_test)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
 endforeach()
+
+add_executable(asjit_test tests/test_jit.c)
+target_link_libraries(asjit_test PRIVATE ascore)
+target_compile_options(asjit_test PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+add_test(NAME asjit_v004 COMMAND asjit_test)
